@@ -14,7 +14,15 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExternalLink } from 'lucide-react';
+import VideoModal from '@/components/VideoModal';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface VideoData {
   id: string;
@@ -24,12 +32,17 @@ interface VideoData {
   preview_url: string;
 }
 
+const ITEMS_PER_PAGE = 6;
+
 const LearningPage: React.FC = () => {
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [filteredVideos, setFilteredVideos] = useState<VideoData[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Fetch videos from Supabase
   useEffect(() => {
@@ -59,21 +72,54 @@ const LearningPage: React.FC = () => {
     fetchVideos();
   }, []);
   
-  // Filter videos when search query changes
+  // Filter videos when search query changes - case insensitive and partial match
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredVideos(videos);
+      setCurrentPage(1); // Reset to first page when clearing search
     } else {
+      const lowercaseQuery = searchQuery.toLowerCase();
       const filtered = videos.filter(video => 
-        video.file_name.toLowerCase().includes(searchQuery.toLowerCase())
+        video.file_name.toLowerCase().includes(lowercaseQuery)
       );
       setFilteredVideos(filtered);
+      setCurrentPage(1); // Reset to first page when searching
     }
   }, [searchQuery, videos]);
   
   // Handle search input changes
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
+  };
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredVideos.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentVideos = filteredVideos.slice(startIndex, endIndex);
+
+  // Handle pagination navigation
+  const goToPage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo(0, 0);
+  };
+
+  // Open video modal
+  const openVideoModal = (video: VideoData) => {
+    setSelectedVideo(video);
+    setIsModalOpen(true);
+  };
+  
+  // Close video modal
+  const closeVideoModal = () => {
+    setIsModalOpen(false);
+  };
+
+  // Format the file name to be more readable
+  const formatFileName = (fileName: string) => {
+    return fileName
+      .replace(/\.\w+$/, '') // Remove file extension
+      .replace(/_/g, ' '); // Replace underscores with spaces
   };
   
   return (
@@ -128,22 +174,34 @@ const LearningPage: React.FC = () => {
         )}
         
         {/* Videos Grid */}
-        {!isLoading && filteredVideos.length > 0 && (
+        {!isLoading && currentVideos.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {filteredVideos.map((video) => (
-              <Card key={video.id} className="overflow-hidden glass-card flex flex-col">
-                <div className="aspect-video bg-muted/20">
+            {currentVideos.map((video) => (
+              <Card 
+                key={video.id} 
+                className="overflow-hidden glass-card flex flex-col hover:shadow-lg transition-shadow"
+                onClick={() => openVideoModal(video)}
+              >
+                <div className="aspect-video bg-muted/20 cursor-pointer relative">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/5 hover:bg-black/10 transition-colors">
+                    <div className="w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center hover:bg-primary transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                        <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                      </svg>
+                    </div>
+                  </div>
                   <iframe 
                     src={`https://drive.google.com/file/d/${video.file_id}/preview`} 
                     width="100%" 
                     height="100%" 
                     allow="autoplay" 
                     title={video.file_name}
-                    style={{ border: 'none' }}
+                    style={{ pointerEvents: 'none', border: 'none' }}
+                    tabIndex={-1}
                   />
                 </div>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">{video.file_name}</CardTitle>
+                  <CardTitle className="text-lg">{formatFileName(video.file_name)}</CardTitle>
                 </CardHeader>
                 <CardContent className="pb-2 pt-0">
                   <p className="text-sm text-muted-foreground">Indian Sign Language</p>
@@ -154,10 +212,12 @@ const LearningPage: React.FC = () => {
                     variant="ghost" 
                     size="sm" 
                     className="text-xs text-primary flex items-center gap-1"
-                    onClick={() => window.open(video.preview_url, '_blank')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openVideoModal(video);
+                    }}
                   >
-                    <ExternalLink size={14} />
-                    Open in Drive
+                    Watch Video
                   </Button>
                 </CardFooter>
               </Card>
@@ -184,6 +244,58 @@ const LearningPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Pagination */}
+        {!isLoading && filteredVideos.length > ITEMS_PER_PAGE && (
+          <Pagination className="my-8">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious 
+                  onClick={() => currentPage > 1 && goToPage(currentPage - 1)}
+                  className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                />
+              </PaginationItem>
+              
+              {/* Generate page numbers */}
+              {[...Array(totalPages)].map((_, index) => {
+                const pageNumber = index + 1;
+                
+                // Show current page and some adjacent pages for better UX
+                if (
+                  pageNumber === 1 || 
+                  pageNumber === totalPages || 
+                  (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                ) {
+                  return (
+                    <PaginationItem key={pageNumber}>
+                      <PaginationLink 
+                        isActive={currentPage === pageNumber}
+                        onClick={() => goToPage(pageNumber)}
+                      >
+                        {pageNumber}
+                      </PaginationLink>
+                    </PaginationItem>
+                  );
+                } else if (
+                  (pageNumber === currentPage - 2 && currentPage > 3) || 
+                  (pageNumber === currentPage + 2 && currentPage < totalPages - 2)
+                ) {
+                  // Show ellipsis for skipped pages
+                  return <PaginationItem key={pageNumber}>...</PaginationItem>;
+                }
+                
+                return null;
+              })}
+              
+              <PaginationItem>
+                <PaginationNext 
+                  onClick={() => currentPage < totalPages && goToPage(currentPage + 1)}
+                  className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
         
         {/* Instructions for uploading videos */}
         <div className="mt-12 p-6 glass-card rounded-lg max-w-3xl mx-auto">
@@ -199,6 +311,16 @@ const LearningPage: React.FC = () => {
           </ol>
         </div>
       </div>
+      
+      {/* Video Modal */}
+      {selectedVideo && (
+        <VideoModal
+          isOpen={isModalOpen}
+          onClose={closeVideoModal}
+          videoId={selectedVideo.file_id}
+          title={formatFileName(selectedVideo.file_name)}
+        />
+      )}
       
       <Footer />
     </div>
